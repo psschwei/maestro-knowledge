@@ -271,6 +271,18 @@ async def resync_weaviate_databases() -> list[str]:
     """
     added: list[str] = []
     try:
+        import os
+
+        # Check if Weaviate is properly configured before attempting connection
+        weaviate_api_key = os.getenv("WEAVIATE_API_KEY")
+        weaviate_url = os.getenv("WEAVIATE_URL")
+
+        if not weaviate_api_key or not weaviate_url:
+            logger.debug(
+                "Weaviate not configured (missing WEAVIATE_API_KEY or WEAVIATE_URL), skipping resync"
+            )
+            return added
+
         # Import lazily to avoid mandatory dependency when Weaviate isn't used
         from src.db.vector_db_weaviate import WeaviateVectorDatabase
 
