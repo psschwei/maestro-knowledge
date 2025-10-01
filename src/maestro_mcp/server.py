@@ -101,17 +101,25 @@ def tool_timeout(
     ) -> Callable[..., Awaitable[object]]:
         async def wrapper(*args: object, **kwargs: object) -> object:
             timeout_s = seconds if seconds is not None else DEFAULT_TOOL_TIMEOUT
+            func_name = getattr(func, "__name__", "tool")
+
+            # Create task explicitly to enable proper cancellation on timeout
+            task = asyncio.create_task(func(*args, **kwargs))  # type: ignore[arg-type]
             try:
-                return await asyncio.wait_for(func(*args, **kwargs), timeout=timeout_s)
+                return await asyncio.wait_for(task, timeout=timeout_s)
             except asyncio.TimeoutError:
-                func_name = getattr(func, "__name__", "tool")
                 logger.error(
                     "Tool '%s' timed out after %s seconds", func_name, timeout_s
                 )
+                # Properly cancel the task to avoid resource leaks
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass  # Expected when we cancel
                 return f"Error: '{func_name}' timed out after {timeout_s} seconds"
             except Exception as e:
                 # Catch any uncaught exceptions so we always return a response
-                func_name = getattr(func, "__name__", "tool")
                 logger.exception("Tool '%s' failed: %s", func_name, e)
                 return f"Error: {str(e)}"
 
@@ -129,11 +137,21 @@ async def run_with_timeout(
     (False, error_message). Any other exception is caught and returned as (False, error_message).
     """
     to = timeout_s if timeout_s is not None else DEFAULT_TOOL_TIMEOUT
+
+    # Create task explicitly to enable proper cancellation on timeout
+    # Use type: ignore to handle Awaitable -> Coroutine conversion
+    task = asyncio.create_task(awaitable)  # type: ignore[arg-type]
     try:
-        result = await asyncio.wait_for(awaitable, timeout=to)
+        result = await asyncio.wait_for(task, timeout=to)
         return True, result
     except asyncio.TimeoutError:
         logger.error("Tool '%s' timed out after %s seconds", tool_name, to)
+        # Properly cancel the task to avoid resource leaks
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass  # Expected when we cancel
         return False, f"Error: '{tool_name}' timed out after {to} seconds"
     except Exception as e:
         logger.exception("Tool '%s' failed: %s", tool_name, e)
@@ -295,28 +313,35 @@ async def resync_weaviate_databases() -> list[str]:
             # WeaviateVectorDatabase constructor is synchronous but may hang on client creation
             # Wrap it in an executor with timeout
             loop = asyncio.get_event_loop()
-            temp = await asyncio.wait_for(
-                loop.run_in_executor(None, WeaviateVectorDatabase),
-                timeout=timeout_seconds,
-            )
-        except asyncio.TimeoutError:
-            logger.warning(
-                f"Weaviate client creation timed out after {timeout_seconds} seconds"
-            )
-            return added
+            executor_future = loop.run_in_executor(None, WeaviateVectorDatabase)
+            try:
+                temp = await asyncio.wait_for(executor_future, timeout=timeout_seconds)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    f"Weaviate client creation timed out after {timeout_seconds} seconds"
+                )
+                # Cancel the executor future to avoid resource leaks
+                executor_future.cancel()
+                return added
         except Exception as e:
             logger.warning(f"Failed to create Weaviate client during resync: {e}")
             return added
 
+        # Create task for proper cancellation on timeout
+        list_task = asyncio.create_task(temp.list_collections())
         try:
-            collections = await asyncio.wait_for(
-                temp.list_collections(), timeout=timeout_seconds
-            )
+            collections = await asyncio.wait_for(list_task, timeout=timeout_seconds)
             collections = collections or []
         except asyncio.TimeoutError:
             logger.warning(
                 f"Weaviate collection listing timed out after {timeout_seconds} seconds"
             )
+            # Properly cancel the task to avoid resource leaks
+            list_task.cancel()
+            try:
+                await list_task
+            except asyncio.CancelledError:
+                pass  # Expected when we cancel
             return added
         except Exception as e:
             logger.warning(f"Failed to list Weaviate collections during resync: {e}")
@@ -563,14 +588,21 @@ async def create_mcp_server() -> FastMCP:
         db_list = []
         for db_name, db in vector_databases.items():
             # Protect per-db count with a timeout so /health never hangs
+            count_task = asyncio.create_task(db.count_documents())
             try:
                 count = await asyncio.wait_for(
-                    db.count_documents(), timeout=get_timeout("health")
+                    count_task, timeout=get_timeout("health")
                 )
             except asyncio.TimeoutError:
                 logger.warning(
                     "health_check: count_documents timed out for db '%s'", db_name
                 )
+                # Properly cancel the task to avoid resource leaks
+                count_task.cancel()
+                try:
+                    await count_task
+                except asyncio.CancelledError:
+                    pass  # Expected when we cancel
                 count = -1  # indicate unknown
             except Exception as e:
                 logger.warning(
