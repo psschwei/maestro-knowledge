@@ -137,8 +137,10 @@ class TestMilvusVectorDatabase:
 
         db = MilvusVectorDatabase()
 
-        # Mock the _generate_embedding method to return a test vector
-        with patch.object(db, "_generate_embedding", return_value=[0.1] * 1536):
+        # Mock the async embedding method to return a test vector
+        with patch.object(
+            db, "_generate_embedding_async", new=AsyncMock(return_value=[0.1] * 1536)
+        ):
             documents = [
                 {
                     "url": "http://test1.com",
@@ -175,9 +177,11 @@ class TestMilvusVectorDatabase:
             chunking_config=chunk_cfg,
         )
 
-        # Mock embed generation
+        # Mock async embed generation
         with patch.object(
-            db, "_generate_embedding", return_value=[0.0] * (db.dimension or 1536)
+            db,
+            "_generate_embedding_async",
+            new=AsyncMock(return_value=[0.0] * (db.dimension or 1536)),
         ):
             documents = [
                 {
@@ -273,11 +277,15 @@ class TestMilvusVectorDatabase:
         mock_milvus_client.return_value = mock_client
         db = MilvusVectorDatabase()
 
-        # Mock the _generate_embedding method to simulate missing openai module
+        # Mock the async embedding method to simulate missing openai module
         with patch.object(
             db,
-            "_generate_embedding",
-            side_effect=ValueError("OPENAI_API_KEY is required for OpenAI embeddings."),
+            "_generate_embedding_async",
+            new=AsyncMock(
+                side_effect=ValueError(
+                    "OPENAI_API_KEY is required for OpenAI embeddings."
+                )
+            ),
         ):
             documents = [
                 {
@@ -313,13 +321,15 @@ class TestMilvusVectorDatabase:
         if importlib.util.find_spec("openai") is None:
             pytest.skip("openai module not available")
 
-        # Mock the OpenAI client to return a test embedding
-        with patch("openai.OpenAI") as mock_openai:
-            mock_client_instance = MagicMock()
-            mock_openai.return_value = mock_client_instance
-            mock_client_instance.embeddings.create.return_value.data = [
-                MagicMock(embedding=[0.1] * 1536)
-            ]
+        # Mock the Async OpenAI client to return a test embedding
+        with patch("openai.AsyncOpenAI") as mock_openai:
+            client_instance = MagicMock()
+            mock_openai.return_value = client_instance
+            # embeddings.create is async in AsyncOpenAI
+            client_instance.embeddings = MagicMock()
+            client_instance.embeddings.create = AsyncMock(
+                return_value=MagicMock(data=[MagicMock(embedding=[0.1] * 1536)])
+            )
 
             documents = [
                 {
@@ -335,7 +345,7 @@ class TestMilvusVectorDatabase:
                 assert mock_client.insert.called
                 # Verify that the OpenAI client was called correctly
                 mock_openai.assert_called_once_with(api_key="test-key")
-                mock_client_instance.embeddings.create.assert_called_once_with(
+                client_instance.embeddings.create.assert_awaited_once_with(
                     model="text-embedding-ada-002", input="test content 1"
                 )
 
@@ -584,7 +594,9 @@ class TestMilvusVectorDatabase:
         db.dimension = 1536
 
         # Patch embedding generator to check which model is used
-        with patch.object(db, "_generate_embedding", return_value=[0.0] * 1536) as gen:
+        with patch.object(
+            db, "_generate_embedding_async", new=AsyncMock(return_value=[0.0] * 1536)
+        ) as gen:
             docs = [{"url": "u", "text": "abc", "metadata": {}}]
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
@@ -592,7 +604,7 @@ class TestMilvusVectorDatabase:
                 # one warning emitted
                 assert any("per-collection" in str(x.message) for x in w)
             # Should have used effective (collection) model, not the per-write arg
-            gen.assert_called()
+            gen.assert_awaited()
 
     @pytest.mark.asyncio
     @patch("pymilvus.AsyncMilvusClient")
@@ -667,19 +679,21 @@ class TestMilvusVectorDatabase:
         assert result["text"] == "test content"
         assert result["metadata"] == {}  # Should be empty dict for invalid JSON
 
-    def test_custom_local_embedding_missing_url(self) -> None:
+    @pytest.mark.asyncio
+    async def test_custom_local_embedding_missing_url(self) -> None:
         db = MilvusVectorDatabase()
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(ValueError, match="CUSTOM_EMBEDDING_URL must be set"):
-                db._generate_embedding("test", "custom_local")
+                await db._generate_embedding_async("test", "custom_local")
 
-    def test_custom_local_embedding_missing_model(self) -> None:
+    @pytest.mark.asyncio
+    async def test_custom_local_embedding_missing_model(self) -> None:
         db = MilvusVectorDatabase()
         with patch.dict(
             os.environ, {"CUSTOM_EMBEDDING_URL": "http://localhost:8080"}, clear=True
         ):
             with pytest.raises(ValueError, match="CUSTOM_EMBEDDING_MODEL must be set"):
-                db._generate_embedding("test", "custom_local")
+                await db._generate_embedding_async("test", "custom_local")
 
     def test_custom_local_embedding_missing_vectorsize(self) -> None:
         db = MilvusVectorDatabase()

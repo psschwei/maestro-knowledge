@@ -2,6 +2,7 @@
 # Copyright (c) 2025 IBM
 
 import json
+import asyncio
 import logging
 import os
 import time
@@ -154,67 +155,54 @@ class MilvusVectorDatabase(VectorDatabase):
                 headers[key_value[0].strip()] = key_value[1].strip()
         return headers
 
-    def _generate_embedding(self, text: str, embedding_model: str) -> list[float]:
-        """
-        Generate embeddings for text using the specified model.
-
-        Args:
-            text: Text to embed
-            embedding_model: Name of the embedding model to use
-
-        Returns:
-            List of floats representing the embedding vector
-        """
+    async def _generate_embedding_async(
+        self, text: str, embedding_model: str
+    ) -> list[float]:
+        """Asynchronously generate embeddings for text using OpenAI's AsyncOpenAI."""
         try:
-            import openai
-
-            client_kwargs = {}
-            model_to_use = embedding_model
-            if embedding_model == "custom_local":
-                custom_endpoint_url = os.getenv("CUSTOM_EMBEDDING_URL")
-                if not custom_endpoint_url:
-                    raise ValueError(
-                        "CUSTOM_EMBEDDING_URL must be set for 'custom_local' embedding."
-                    )
-
-                client_kwargs["base_url"] = custom_endpoint_url
-                client_kwargs["api_key"] = os.getenv("CUSTOM_EMBEDDING_API_KEY")
-                model_to_use = os.getenv("CUSTOM_EMBEDDING_MODEL")
-                if not model_to_use:
-                    raise ValueError(
-                        "CUSTOM_EMBEDDING_MODEL must be set for 'custom_local' embedding."
-                    )
-
-                # Add custom headers if available
-                custom_headers = self._parse_custom_headers()
-                if custom_headers:
-                    client_kwargs["default_headers"] = custom_headers
-            else:
-                # Get OpenAI API key from environment
-                api_key = os.getenv("OPENAI_API_KEY")
-                if not api_key:
-                    raise ValueError(
-                        "OPENAI_API_KEY is required for OpenAI embeddings."
-                    )
-                client_kwargs["api_key"] = api_key
-
-                if model_to_use == "default":
-                    model_to_use = "text-embedding-ada-002"
-
-            client = openai.OpenAI(**client_kwargs)
-
-            response = client.embeddings.create(model=model_to_use, input=text)
-
-            return response.data[0].embedding
-
-        except ImportError:
+            from openai import AsyncOpenAI  # type: ignore
+        except ImportError as e:
             raise ImportError(
-                "openai package is required for embedding generation. Install with: pip install openai"
-            )
-        except ValueError as e:
-            raise e
+                "openai package with AsyncOpenAI is required. Install/upgrade with: pip install -U openai"
+            ) from e
+
+        client_kwargs: dict[str, Any] = {}
+        model_to_use = embedding_model
+        if embedding_model == "custom_local":
+            custom_endpoint_url = os.getenv("CUSTOM_EMBEDDING_URL")
+            if not custom_endpoint_url:
+                raise ValueError(
+                    "CUSTOM_EMBEDDING_URL must be set for 'custom_local' embedding."
+                )
+
+            client_kwargs["base_url"] = custom_endpoint_url
+            client_kwargs["api_key"] = os.getenv("CUSTOM_EMBEDDING_API_KEY")
+            model_to_use = os.getenv("CUSTOM_EMBEDDING_MODEL")
+            if not model_to_use:
+                raise ValueError(
+                    "CUSTOM_EMBEDDING_MODEL must be set for 'custom_local' embedding."
+                )
+
+            # Add custom headers if available
+            custom_headers = self._parse_custom_headers()
+            if custom_headers:
+                client_kwargs["default_headers"] = custom_headers
+        else:
+            # Get OpenAI API key from environment
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise ValueError("OPENAI_API_KEY is required for OpenAI embeddings.")
+            client_kwargs["api_key"] = api_key
+
+            if model_to_use == "default":
+                model_to_use = "text-embedding-ada-002"
+
+        try:
+            client = AsyncOpenAI(**client_kwargs)
+            resp = await client.embeddings.create(model=model_to_use, input=text)
+            return resp.data[0].embedding
         except Exception as e:
-            raise RuntimeError(f"Failed to generate embedding: {e}")
+            raise RuntimeError(f"Failed to generate embedding asynchronously: {e}")
 
     def _get_embedding_dimension(self, embedding_model: str) -> int:
         """
@@ -460,7 +448,7 @@ class MilvusVectorDatabase(VectorDatabase):
                     model_for_generation = (
                         effective_embedding or "text-embedding-ada-002"
                     )
-                    doc_vector = self._generate_embedding(
+                    doc_vector = await self._generate_embedding_async(
                         chunk_text_content, model_for_generation
                     )
 
@@ -494,6 +482,8 @@ class MilvusVectorDatabase(VectorDatabase):
                     }
                 )
                 id_counter += 1
+                # yield to keep event loop responsive
+                await asyncio.sleep(0)
             # end per-doc tracking
             total_chunks += per_doc_chunk_count
             stats_per_doc.append(
@@ -1149,8 +1139,8 @@ class MilvusVectorDatabase(VectorDatabase):
                 warnings.warn("Milvus client is not available. Returning empty list.")
                 return []
 
-            # Generate embedding for the query
-            query_vector = self._generate_embedding(
+            # Generate embedding for the query without blocking the event loop
+            query_vector = await self._generate_embedding_async(
                 query, self.embedding_model or "default"
             )
 
