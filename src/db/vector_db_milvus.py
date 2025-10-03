@@ -515,11 +515,12 @@ class MilvusVectorDatabase(VectorDatabase):
                 # pymilvus-style flush
                 if hasattr(self.client, "flush"):
                     try:
-                        await self.client.flush([target_collection])
+                        # Try string format first (more common)
+                        await self.client.flush(target_collection)
                     except Exception:
-                        # Some clients accept a single collection name
+                        # Fall back to list format if string format fails
                         try:
-                            await self.client.flush(target_collection)
+                            await self.client.flush([target_collection])
                         except Exception:
                             pass
 
