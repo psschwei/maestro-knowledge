@@ -3,20 +3,20 @@
 A modular vector database interface supporting multiple backends (Weaviate, Milvus) with a unified API and flexible embedding strategies.
 
 ## Features
-
-- Multi-backend support: Weaviate and Milvus vector databases
-- Flexible embedding strategies: Support for pre-computed vectors and multiple embedding models
-- Pluggable document chunking: None (default), Fixed (size/overlap), Sentence-aware, Semantic (AI-powered)
-- Unified API: Consistent interface across different vector database implementations
-- Factory pattern: Easy creation and switching between database types
-- MCP Server: Model Context Protocol server for AI agent integration with multi-database support
-- CLI Tool: Command-line interface for vector database operations (separate repository: AI4quantum/maestro-cli)
-- Document management: Write, read, delete, and query documents
-- Collection management: List and manage collections across vector databases
-- Query functionality: Natural language querying with semantic search across documents
-- Metadata support: Rich metadata handling for documents
-- Environment variable substitution: Dynamic configuration with {{ENV_VAR_NAME}} syntax
-- Safety features: Confirmation prompts for destructive operations with --force flag bypass
+ 
+- **Multi-backend support**: Weaviate and Milvus vector databases
+- **Flexible embedding strategies**: Support for pre-computed vectors and multiple embedding models
+- **Pluggable document chunking**: None (default), Fixed (size/overlap), Sentence-aware, Semantic (AI-powered)
+- **Unified API**: Consistent interface across different vector database implementations
+- **Factory pattern**: Easy creation and switching between database types
+- **MCP Server**: Model Context Protocol server for AI agent integration with multi-database support
+- **CLI Tool**: Command-line interface for vector database operations (separate repository: AI4quantum/maestro-cli)
+- **Document management**: Write, read, delete, and query documents
+- **Collection management**: List and manage collections across vector databases
+- **Query functionality**: Natural language querying with semantic search across documents
+- **Metadata support**: Rich metadata handling for documents
+- **Environment variable substitution**: Dynamic configuration with `{{ENV_VAR_NAME}}` syntax
+- **Safety features**: Confirmation prompts for destructive operations with `--force` flag bypass
 
 ## Chunking Strategies
 
@@ -536,6 +536,24 @@ The project includes comprehensive log monitoring capabilities:
 - **📄 Log file management** - Automatic detection and size tracking
 - **🔍 System integration** - macOS system log monitoring for debugging
 - **🎯 Service-specific monitoring** - Tail individual service logs or all at once
+
+## Health endpoint
+
+The server exposes a `/health` probe with two modes:
+
+- Liveness (default): `GET /health` returns `OK`
+- Readiness: `GET /health?ready` returns `Ready` and a brief JSON summary of databases
+
+Example readiness body:
+
+```text
+Ready
+{
+  "databases": [
+    {"name": "default", "type": "milvus", "collection": "MaestroDocs", "document_count": 123}
+  ]
+}
+```
 
 ## License
 

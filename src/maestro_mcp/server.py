@@ -582,10 +582,15 @@ async def create_mcp_server() -> FastMCP:
 
     @app.custom_route("/health", methods=["GET"])
     async def health_check(request: Request) -> PlainTextResponse:
-        if not vector_databases:
-            return PlainTextResponse("No vector databases are currently active")
+        # Liveness by default; readiness when "ready" param is present (value ignored)
+        if request.query_params.get("ready") is None:
+            return PlainTextResponse("OK")
 
-        db_list = []
+        # Readiness: perform light checks with timeouts
+        if not vector_databases:
+            return PlainTextResponse("Ready: no databases configured")
+
+        db_list: list[dict[str, Any]] = []
         for db_name, db in vector_databases.items():
             # Protect per-db count with a timeout so /health never hangs
             count_task = asyncio.create_task(db.count_documents())
@@ -595,7 +600,8 @@ async def create_mcp_server() -> FastMCP:
                 )
             except asyncio.TimeoutError:
                 logger.warning(
-                    "health_check: count_documents timed out for db '%s'", db_name
+                    "health_check(readiness): count_documents timed out for db '%s'",
+                    db_name,
                 )
                 # Properly cancel the task to avoid resource leaks
                 count_task.cancel()
@@ -606,7 +612,7 @@ async def create_mcp_server() -> FastMCP:
                 count = -1  # indicate unknown
             except Exception as e:
                 logger.warning(
-                    "health_check: count_documents failed for db '%s': %s",
+                    "health_check(readiness): count_documents failed for db '%s': %s",
                     db_name,
                     e,
                 )
@@ -620,8 +626,9 @@ async def create_mcp_server() -> FastMCP:
                     "document_count": count,
                 }
             )
+
         return PlainTextResponse(
-            f"Available vector databases:\n{json.dumps(db_list, indent=2)}"
+            "Ready\n" + json.dumps({"databases": db_list}, indent=2)
         )
 
     @app.tool()
