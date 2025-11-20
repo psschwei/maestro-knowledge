@@ -4,7 +4,12 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 # Set working directory and environment variables
 WORKDIR /app
 ENV PYTHONPATH=/app
-ENV UV_CACHE_DIR=/app/cache
+ENV UV_CACHE_DIR=/tmp/.uv-cache
+
+# Runtime directories for OpenShift compatibility (writable locations)
+ENV RUNTIME_DIR=/tmp
+ENV LOG_DIR=/tmp
+ENV PID_DIR=/tmp
 
 # Install system packages and create the non-root user and app directory.
 RUN apt-get update && \

@@ -549,10 +549,22 @@ maestro-knowledge/
     ├── CONTRIBUTING.md      # Contribution guidelines
     ├── CLI_UX_REVIEW.md     # CLI UX review and improvements
     ├── PRESENTATION.md      # Project presentation
-    └── IMPLEMENTATION_SUMMARY.md # Document ingestion feature documentation
+    ├── IMPLEMENTATION_SUMMARY.md # Document ingestion feature documentation
+    ├── OPENSHIFT_DEPLOYMENT.md   # OpenShift deployment guide
+    └── OPENSHIFT_CHANGES_SUMMARY.md # OpenShift compatibility changes
 ```
 
 ## Environment Variables
+
+### Runtime Configuration (OpenShift/Docker)
+
+- `RUNTIME_DIR`: Base directory for runtime files (default: `/tmp` in Docker, project directory locally)
+- `LOG_DIR`: Directory for log files (default: `$RUNTIME_DIR`)
+- `PID_DIR`: Directory for PID files (default: `$RUNTIME_DIR`)
+
+**Note**: For OpenShift deployments, see [OpenShift Deployment Guide](docs/OPENSHIFT_DEPLOYMENT.md) for detailed configuration.
+
+### Application Configuration
 
 - `VECTOR_DB_TYPE`: Default vector database type (defaults to "weaviate")
 - `OPENAI_API_KEY`: Required for OpenAI embedding models

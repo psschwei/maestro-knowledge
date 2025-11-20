@@ -16,8 +16,15 @@ NC='\033[0m' # No Color
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PID_FILE="$SCRIPT_DIR/mcp_server.pid"
-LOG_FILE="$SCRIPT_DIR/mcp_server.log"
+
+# Use environment variables for runtime directories (OpenShift compatible)
+# Falls back to SCRIPT_DIR for local development
+RUNTIME_DIR="${RUNTIME_DIR:-$SCRIPT_DIR}"
+LOG_DIR="${LOG_DIR:-$RUNTIME_DIR}"
+PID_DIR="${PID_DIR:-$RUNTIME_DIR}"
+
+PID_FILE="$PID_DIR/mcp_server.pid"
+LOG_FILE="$LOG_DIR/mcp_server.log"
 DEFAULT_PORT="8030"
 
 # Function to print colored output

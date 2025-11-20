@@ -16,8 +16,15 @@ NC='\033[0m' # No Color
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PID_FILE="$SCRIPT_DIR/mcp_server.pid"
-LOG_FILE="$SCRIPT_DIR/mcp_server.log"
+
+# Use environment variables for runtime directories (OpenShift compatible)
+# Falls back to SCRIPT_DIR for local development
+RUNTIME_DIR="${RUNTIME_DIR:-$SCRIPT_DIR}"
+LOG_DIR="${LOG_DIR:-$RUNTIME_DIR}"
+PID_DIR="${PID_DIR:-$RUNTIME_DIR}"
+
+PID_FILE="$PID_DIR/mcp_server.pid"
+LOG_FILE="$LOG_DIR/mcp_server.log"
 PYTHON_MODULE="src.maestro_mcp.server"
 DEFAULT_HOST="localhost"
 DEFAULT_PORT="8030"
@@ -176,8 +183,12 @@ start_server() {
         return 0
     fi
     
-    # Create log file if it doesn't exist
-    touch "$LOG_FILE"
+    # Ensure runtime directories exist (create if needed and writable)
+    for dir in "$LOG_DIR" "$PID_DIR"; do
+        if [ ! -d "$dir" ]; then
+            mkdir -p "$dir" 2>/dev/null || true
+        fi
+    done
     
     # Set PYTHONPATH to include the project root
     export PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH"

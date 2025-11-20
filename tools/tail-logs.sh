@@ -17,8 +17,30 @@ NC='\033[0m' # No Color
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-MCP_LOG_FILE="$PROJECT_ROOT/mcp_server.log"
-MCP_PID_FILE="$PROJECT_ROOT/mcp_server.pid"
+
+# Use environment variables for runtime directories (OpenShift compatible)
+# Falls back to PROJECT_ROOT for local development
+RUNTIME_DIR="${RUNTIME_DIR:-$PROJECT_ROOT}"
+LOG_DIR="${LOG_DIR:-$RUNTIME_DIR}"
+PID_DIR="${PID_DIR:-$RUNTIME_DIR}"
+
+# Check multiple locations for log files (OpenShift /tmp or local PROJECT_ROOT)
+if [ -f "$LOG_DIR/mcp_server.log" ]; then
+    MCP_LOG_FILE="$LOG_DIR/mcp_server.log"
+elif [ -f "$PROJECT_ROOT/mcp_server.log" ]; then
+    MCP_LOG_FILE="$PROJECT_ROOT/mcp_server.log"
+else
+    MCP_LOG_FILE="$LOG_DIR/mcp_server.log"  # Default to LOG_DIR
+fi
+
+if [ -f "$PID_DIR/mcp_server.pid" ]; then
+    MCP_PID_FILE="$PID_DIR/mcp_server.pid"
+elif [ -f "$PROJECT_ROOT/mcp_server.pid" ]; then
+    MCP_PID_FILE="$PROJECT_ROOT/mcp_server.pid"
+else
+    MCP_PID_FILE="$PID_DIR/mcp_server.pid"  # Default to PID_DIR
+fi
+
 DEFAULT_PORT="8030"
 
 # Function to check if a service is running
